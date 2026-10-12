@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campus Bites - Kitchen & Admin Portal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            obsidian: '#0F0F11',
+            charcoal: '#181920',
+            cardElevated: '#22242F',
+            borderDark: '#2F3242',
+            crimson: {
+              DEFAULT: '#E50914',
+              hover: '#B81D24',
+              light: '#FF3B30',
+              soft: 'rgba(229, 9, 20, 0.15)'
+            },
+            accentGold: '#FFB800',
+            successGreen: '#00E676',
+            vegGreen: '#2E7D32',
+            nonVegRed: '#D32F2F',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0F0F11;
+      color: #FFFFFF;
+      font-family: 'Inter', sans-serif;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #181920;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2F3242;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #E50914;
+    }
+    @keyframes pulse-fast {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    .pulse-alert {
+      animation: pulse-fast 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-obsidian text-gray-100 min-h-screen selection:bg-crimson selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    const API_BASE = window.location.origin.includes('8080') 
+      ? '/api' 
+      : 'http://localhost:8080/api';
+
+    // Status colors and labels
+    const STATUS_MAP = {
+      PENDING: { label: 'Pending', bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+      PAID: { label: 'Paid & Queued', bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+      PREPARING: { label: 'Cooking', bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
+      READY_FOR_PICKUP: { label: 'Ready for Pickup', bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/40' },
+      COMPLETED: { label: 'Completed', bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/30' },
+      CANCELLED: { label: 'Cancelled', bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30' },
+    };
+
+    // Main Admin Application
+    function App() {
+      const [activeTab, setActiveTab] = useState('orders'); // 'overview', 'orders', 'menu', 'support', 'students'
+      const [stats, setStats] = useState(null);
+      const [orders, setOrders] = useState([]);
+      const [menuItems, setMenuItems] = useState([]);
+      const [supportTickets, setSupportTickets] = useState([]);
+      const [students, setStudents] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [autoRefresh, setAutoRefresh] = useState(true);
+      const [toast, setToast] = useState(null);
+
+      // Modals
+      const [showAddMenuModal, setShowAddMenuModal] = useState(false);
+      const [editingMenuItem, setEditingMenuItem] = useState(null);
+      const [showWalletModal, setShowWalletModal] = useState(false);
+      const [walletTargetStudent, setWalletTargetStudent] = useState('');
+      const [activeTicketReplyModal, setActiveTicketReplyModal] = useState(null);
+
+      // Toast notification helper
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+      };
+
+      // Fetch Stats
+      const fetchStats = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/stats`);
+          if (res.ok) {
+            const data = await res.json();
+            setStats(data);
+          }
+        } catch (e) {
+          console.error("Error fetching stats:", e);
+        }
+      };
+
+      // Fetch Orders
+      const fetchOrders = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/orders`);
+          if (res.ok) {
+            const data = await res.json();
+            setOrders(data);
+          }
+        } catch (e) {
+          console.error("Error fetching orders:", e);
+        }
+      };
+
+      // Fetch Menu
+      const fetchMenu = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/menu`);
+          if (res.ok) {
+            const data = await res.json();
+            setMenuItems(data);
+          }
+        } catch (e) {
+          console.error("Error fetching menu:", e);
+        }
+      };
+
+      // Fetch Support Tickets
+      const fetchSupportTickets = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/support`);
+          if (res.ok) {
+            const data = await res.json();
+            setSupportTickets(data);
+          }
+        } catch (e) {
+          console.error("Error fetching tickets:", e);
+        }
+      };
+
+      // Fetch Students
+      const fetchStudents = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/students`);
+          if (res.ok) {
+            const data = await res.json();
+            setStudents(data);
+          }
+        } catch (e) {
+          console.error("Error fetching students:", e);
+        }
+      };
+
+      // Refresh All Data
+      const refreshAll = useCallback(async () => {
+        await Promise.all([
+          fetchStats(),
+          fetchOrders(),
+          fetchMenu(),
+          fetchSupportTickets(),
+          fetchStudents(),
+        ]);
+        setLoading(false);
+      }, []);
+
+      useEffect(() => {
+        refreshAll();
+      }, [refreshAll]);
+
+      // Polling effect every 5 seconds if autoRefresh enabled
+      useEffect(() => {
+        if (!autoRefresh) return;
+        const interval = setInterval(() => {
+          fetchOrders();
+          fetchStats();
+          fetchSupportTickets();
+        }, 5000);
+        return () => clearInterval(interval);
+      }, [autoRefresh]);
+
+      // Order Status Transition Handler
+      const handleUpdateOrderStatus = async (orderId, newStatus) => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/orders/${orderId}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+          });
+          if (res.ok) {
+            showToast(`Order status updated to ${newStatus.replace(/_/g, ' ')}!`);
+            fetchOrders();
+            fetchStats();
+          } else {
+            showToast('Failed to update order status', 'error');
+          }
+        } catch (e) {
+          showToast('Network error while updating status', 'error');
+        }
+      };
+
+      // Toggle Menu Item Availability
+      const handleToggleAvailability = async (id, name, currentStatus) => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/menu/${id}/toggle`, {
+            method: 'PATCH',
+          });
+          if (res.ok) {
+            showToast(`"${name}" is now ${currentStatus ? 'OUT OF STOCK' : 'AVAILABLE'}!`);
+            fetchMenu();
+            fetchStats();
+          }
+        } catch (e) {
+          showToast('Failed to toggle stock status', 'error');
+        }
+      };
+
+      // Delete Menu Item
+      const handleDeleteMenuItem = async (id, name) => {
+        if (!confirm(`Are you sure you want to remove "${name}" from the canteen menu?`)) return;
+        try {
+          const res = await fetch(`${API_BASE}/admin/menu/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            showToast(`"${name}" deleted from menu!`);
+            fetchMenu();
+            fetchStats();
+          }
+        } catch (e) {
+          showToast('Failed to delete item', 'error');
+        }
+      };
+
+      // Save (Create or Update) Menu Item
+      const handleSaveMenuItem = async (formData) => {
+        const isEdit = Boolean(formData.id);
+        const url = isEdit ? `${API_BASE}/admin/menu/${formData.id}` : `${API_BASE}/admin/menu`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+          if (res.ok) {
+            showToast(isEdit ? 'Food item updated successfully!' : 'New food item added to canteen menu!');
+            setShowAddMenuModal(false);
+            setEditingMenuItem(null);
+            fetchMenu();
+            fetchStats();
+          } else {
+            showToast('Failed to save food item', 'error');
+          }
+        } catch (e) {
+          showToast('Error saving food item', 'error');
+        }
+      };
+
+      // Resolve / Reply Support Ticket
+      const handleReplyTicket = async (ticketId, replyText, status = 'RESOLVED') => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/support/${ticketId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_reply: replyText, status }),
+          });
+          if (res.ok) {
+            showToast('Response sent to student!');
+            setActiveTicketReplyModal(null);
+            fetchSupportTickets();
+            fetchStats();
+          }
+        } catch (e) {
+          showToast('Failed to submit reply', 'error');
+        }
+      };
+
+      // Wallet Adjustment / Refund
+      const handleAdjustWallet = async (studentIdOrEmail, amount, reason) => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/students/wallet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_id_or_email: studentIdOrEmail,
+              amount: parseFloat(amount),
+              reason: reason || 'Admin desk adjustment',
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast(data.message || 'Wallet balance updated!');
+            setShowWalletModal(false);
+            fetchStudents();
+            fetchStats();
+          } else {
+            showToast(data.error || 'Failed to adjust wallet', 'error');
+          }
+        } catch (e) {
+          showToast('Network error updating wallet', 'error');
+        }
+      };
+
+      return (
+        <div className="flex h-screen bg-obsidian text-gray-100 overflow-hidden">
+          {/* Sidebar */}
+          <aside className="w-64 bg-charcoal border-r border-borderDark flex flex-col justify-between shrink-0">
+            <div>
+              {/* Brand Header */}
+              <div className="p-5 border-b border-borderDark flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-crimson flex items-center justify-center shadow-lg shadow-crimson/30">
+                  <span className="text-xl">🍔</span>
+                </div>
+                <div>
+                  <div className="font-extrabold text-base tracking-wide flex items-center gap-1.5">
+                    <span>CAMPUS</span>
+                    <span className="text-crimson">BITES</span>
+                  </div>
+                  <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Kitchen & Admin Desk</div>
+                </div>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="p-4 space-y-1.5 text-sm font-medium">
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                    activeTab === 'overview'
+                      ? 'bg-crimson text-white shadow-lg shadow-crimson/20 font-semibold'
+                      : 'text-gray-400 hover:bg-cardElevated hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">📊</span>
+                    <span>Dashboard</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('orders')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                    activeTab === 'orders'
+                      ? 'bg-crimson text-white shadow-lg shadow-crimson/20 font-semibold'
+                      : 'text-gray-400 hover:bg-cardElevated hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">🍳</span>
+                    <span>Live Kitchen (KDS)</span>
+                  </div>
+                  {stats?.active_orders > 0 && (
+                    <span className="bg-accentGold text-black font-extrabold text-xs px-2 py-0.5 rounded-full">
+                      {stats.active_orders}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('menu')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                    activeTab === 'menu'
+                      ? 'bg-crimson text-white shadow-lg shadow-crimson/20 font-semibold'
+                      : 'text-gray-400 hover:bg-cardElevated hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">📋</span>
+                    <span>Menu & Stock</span>
+                  </div>
+                  <span className="text-xs text-gray-400 bg-borderDark px-2 py-0.5 rounded-md font-mono">
+                    {menuItems.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('support')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                    activeTab === 'support'
+                      ? 'bg-crimson text-white shadow-lg shadow-crimson/20 font-semibold'
+                      : 'text-gray-400 hover:bg-cardElevated hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">💬</span>
+                    <span>Customer Care</span>
+                  </div>
+                  {stats?.open_tickets > 0 && (
+                    <span className="bg-crimson-light text-white font-extrabold text-xs px-2 py-0.5 rounded-full">
+                      {stats.open_tickets}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('students')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                    activeTab === 'students'
+                      ? 'bg-crimson text-white shadow-lg shadow-crimson/20 font-semibold'
+                      : 'text-gray-400 hover:bg-cardElevated hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">👥</span>
+                    <span>Students & Wallets</span>
+                  </div>
+                </button>
+              </nav>
+            </div>
+
+            {/* Bottom Meta & Auto-Refresh Switch */}
+            <div className="p-4 border-t border-borderDark bg-obsidian/40 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-400 flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-successGreen animate-pulse' : 'bg-gray-500'}`}></span>
+                  Live Auto-Sync (5s)
+                </span>
+                <button
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                    autoRefresh ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-800 text-gray-400'
+                  }`}
+                >
+                  {autoRefresh ? 'ON' : 'OFF'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-gray-400">
+                <span>College Canteen DB</span>
+                <span className="text-emerald-400 font-mono text-[11px]">canteen.db</span>
+              </div>
+            </div>
+          </aside>
+
+          {/* Main Content Area */}
+          <main className="flex-1 flex flex-col h-screen overflow-hidden">
+            {/* Top Bar */}
+            <header className="h-16 border-b border-borderDark bg-charcoal/90 backdrop-blur px-8 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-4">
+                <h1 className="text-lg font-bold tracking-tight">
+                  {activeTab === 'overview' && '📈 Management Overview'}
+                  {activeTab === 'orders' && '🍳 Kitchen Display System (Live Orders)'}
+                  {activeTab === 'menu' && '🍲 Menu Catalog & Inventory Control'}
+                  {activeTab === 'support' && '🎧 Student Customer Care & Dispute Desk'}
+                  {activeTab === 'students' && '💳 Student Meal Pass & Wallet Directory'}
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <a
+                  href="/kiosk/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-cardElevated hover:bg-borderDark text-accentGold rounded-lg text-xs font-bold flex items-center gap-1.5 transition border border-borderDark"
+                >
+                  <span>📺</span> Launch Kiosk TV Board
+                </a>
+
+                <button
+                  onClick={() => refreshAll()}
+                  className="px-3 py-1.5 bg-cardElevated hover:bg-borderDark text-gray-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border border-borderDark"
+                >
+                  <span>🔄</span> Refresh
+                </button>
+
+                {activeTab === 'menu' && (
+                  <button
+                    onClick={() => {
+                      setEditingMenuItem(null);
+                      setShowAddMenuModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-crimson hover:bg-crimson-hover text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-crimson/30"
+                  >
+                    <span>➕</span> Add New Dish
+                  </button>
+                )}
+
+                {activeTab === 'students' && (
+                  <button
+                    onClick={() => {
+                      setWalletTargetStudent('');
+                      setShowWalletModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-accentGold text-black rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-accentGold/20"
+                  >
+                    <span>⚡</span> Top-Up / Refund Wallet
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {/* Scrollable Body Content */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin text-3xl">⏳</div>
+                  <span className="ml-3 text-gray-400 font-medium">Connecting to Campus Bites backend...</span>
+                </div>
+              ) : (
+                <>
+                  {activeTab === 'overview' && (
+                    <OverviewTab
+                      stats={stats}
+                      orders={orders}
+                      supportTickets={supportTickets}
+                      onSwitchTab={setActiveTab}
+                      onUpdateStatus={handleUpdateOrderStatus}
+                    />
+                  )}
+                  {activeTab === 'orders' && (
+                    <OrdersKdsTab
+                      orders={orders}
+                      onUpdateStatus={handleUpdateOrderStatus}
+                    />
+                  )}
+                  {activeTab === 'menu' && (
+                    <MenuManagerTab
+                      menuItems={menuItems}
+                      onToggleAvailability={handleToggleAvailability}
+                      onEditItem={(item) => {
+                        setEditingMenuItem(item);
+                        setShowAddMenuModal(true);
+                      }}
+                      onDeleteItem={handleDeleteMenuItem}
+                    />
+                  )}
+                  {activeTab === 'support' && (
+                    <CustomerCareTab
+                      tickets={supportTickets}
+                      onOpenReplyModal={(ticket) => setActiveTicketReplyModal(ticket)}
+                      onQuickRefund={(studentId) => {
+                        setWalletTargetStudent(studentId);
+                        setShowWalletModal(true);
+                      }}
+                    />
+                  )}
+                  {activeTab === 'students' && (
+                    <StudentsTab
+                      students={students}
+                      onAdjustWallet={(studentId) => {
+                        setWalletTargetStudent(studentId);
+                        setShowWalletModal(true);
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </main>
+
+          {/* Toast Notification */}
+          {toast && (
+            <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-charcoal border border-borderDark px-4 py-3 rounded-xl shadow-2xl animate-fade-in text-sm font-semibold">
+              <span>{toast.type === 'error' ? '⚠️' : '✅'}</span>
+              <span className={toast.type === 'error' ? 'text-red-400' : 'text-emerald-400'}>
+                {toast.message}
+              </span>
+            </div>
+          )}
+
+          {/* Add / Edit Menu Item Modal */}
+          {showAddMenuModal && (
+            <MenuModal
+              initialData={editingMenuItem}
+              onClose={() => {
+                setShowAddMenuModal(false);
+                setEditingMenuItem(null);
+              }}
+              onSave={handleSaveMenuItem}
+            />
+          )}
+
+          {/* Wallet Adjustment Modal */}
+          {showWalletModal && (
+            <WalletModal
+              initialStudent={walletTargetStudent}
+              onClose={() => setShowWalletModal(false)}
+              onConfirm={handleAdjustWallet}
+            />
+          )}
+
+          {/* Support Ticket Reply Modal */}
+          {activeTicketReplyModal && (
+            <TicketReplyModal
+              ticket={activeTicketReplyModal}
+              onClose={() => setActiveTicketReplyModal(null)}
+              onSubmit={handleReplyTicket}
+              onQuickRefund={() => {
+                setWalletTargetStudent(activeTicketReplyModal.user?.student_id || '');
+                setShowWalletModal(true);
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 1. DASHBOARD OVERVIEW TAB
+    // ==========================================
+    function OverviewTab({ stats, orders, supportTickets, onSwitchTab, onUpdateStatus }) {
+      const activeOrdersList = orders.filter(o => o.status === 'PREPARING' || o.status === 'READY_FOR_PICKUP' || o.status === 'PAID');
+
+      return (
+        <div className="space-y-8 max-w-7xl mx-auto">
+          {/* Key KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <div className="bg-charcoal border border-borderDark rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Today's Revenue</div>
+              <div className="text-3xl font-black text-white mt-2 font-mono">
+                ₹{(stats?.total_revenue || 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-emerald-400 mt-2 flex items-center gap-1 font-medium">
+                <span>↑</span> 5% Campus GST accounted
+              </div>
+              <div className="absolute top-4 right-4 text-3xl opacity-20">💰</div>
+            </div>
+
+            <div className="bg-charcoal border border-borderDark rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Active In Kitchen</div>
+              <div className="text-3xl font-black text-accentGold mt-2 font-mono">
+                {stats?.active_orders || 0}
+              </div>
+              <div className="text-xs text-gray-400 mt-2 font-medium">
+                Waiting cooking / counter pickup
+              </div>
+              <div className="absolute top-4 right-4 text-3xl opacity-20">🍳</div>
+            </div>
+
+            <div className="bg-charcoal border border-borderDark rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Orders Fulfilled</div>
+              <div className="text-3xl font-black text-emerald-400 mt-2 font-mono">
+                {stats?.completed_orders || 0}
+              </div>
+              <div className="text-xs text-gray-400 mt-2 font-medium">
+                Total Orders: {stats?.total_orders || 0}
+              </div>
+              <div className="absolute top-4 right-4 text-3xl opacity-20">✅</div>
+            </div>
+
+            <div className="bg-charcoal border border-borderDark rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Customer Care Inquiries</div>
+              <div className={`text-3xl font-black mt-2 font-mono ${stats?.open_tickets > 0 ? 'text-crimson-light' : 'text-gray-300'}`}>
+                {stats?.open_tickets || 0}
+              </div>
+              <div className="text-xs text-gray-400 mt-2 font-medium">
+                {stats?.open_tickets > 0 ? 'Action required by staff' : 'All student inquiries resolved'}
+              </div>
+              <div className="absolute top-4 right-4 text-3xl opacity-20">🎧</div>
+            </div>
+          </div>
+
+          {/* Live Kitchen Queue At A Glance */}
+          <div className="bg-charcoal border border-borderDark rounded-2xl p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-crimson animate-pulse"></span>
+                  Active Kitchen Queue (Tokens Waiting)
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">Real-time orders ready or being prepared right now</p>
+              </div>
+              <button
+                onClick={() => onSwitchTab('orders')}
+                className="text-xs font-bold text-crimson hover:underline flex items-center gap-1"
+              >
+                Open Full KDS Board →
+              </button>
+            </div>
+
+            {activeOrdersList.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 bg-obsidian/40 rounded-xl border border-dashed border-borderDark">
+                <span className="text-4xl block mb-2">🎉</span>
+                <p className="font-semibold text-gray-300">Kitchen is all caught up!</p>
+                <p className="text-xs text-gray-500 mt-1">No pending or cooking orders in the queue right now.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {activeOrdersList.slice(0, 6).map(order => (
+                  <div key={order.id} className="bg-cardElevated border border-borderDark rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono font-black text-xl text-crimson-light bg-crimson/10 px-2 py-0.5 rounded border border-crimson/30">
+                          {order.token_number}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_MAP[order.status]?.bg} ${STATUS_MAP[order.status]?.text}`}>
+                          {STATUS_MAP[order.status]?.label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-300 font-medium">
+                        Student: <span className="font-bold text-white">{order.user?.name || 'Student'}</span> ({order.user?.student_id || 'CS2026'})
+                      </div>
+                      <div className="mt-2 text-xs text-gray-400 border-t border-borderDark pt-2">
+                        {order.items?.map(i => `${i.quantity}x ${i.food_name}`).join(', ')}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-borderDark flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-accentGold">₹{order.total_amount}</span>
+                      {order.status === 'PREPARING' && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'READY_FOR_PICKUP')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition"
+                        >
+                          Mark Ready
+                        </button>
+                      )}
+                      {order.status === 'READY_FOR_PICKUP' && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'COMPLETED')}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold transition"
+                        >
+                          Mark Collected
+                        </button>
+                      )}
+                      {(order.status === 'PAID' || order.status === 'PENDING') && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'PREPARING')}
+                          className="px-2.5 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded text-xs font-bold transition"
+                        >
+                          Start Cooking
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 2. LIVE KITCHEN DISPLAY SYSTEM (KDS) TAB
+    // ==========================================
+    function OrdersKdsTab({ orders, onUpdateStatus }) {
+      const [filterStatus, setFilterStatus] = useState('ALL');
+      const [searchQuery, setSearchQuery] = useState('');
+
+      const filteredOrders = useMemo(() => {
+        return orders.filter(order => {
+          const matchesStatus = filterStatus === 'ALL' ? true : order.status === filterStatus;
+          const query = searchQuery.toLowerCase();
+          const matchesSearch = !query || 
+            order.token_number?.toLowerCase().includes(query) ||
+            order.user?.name?.toLowerCase().includes(query) ||
+            order.user?.student_id?.toLowerCase().includes(query);
+          return matchesStatus && matchesSearch;
+        });
+      }, [orders, filterStatus, searchQuery]);
+
+      return (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Controls Bar */}
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-charcoal p-4 rounded-2xl border border-borderDark">
+            {/* Filter Pills */}
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              {['ALL', 'PREPARING', 'READY_FOR_PICKUP', 'PAID', 'PENDING', 'COMPLETED'].map(st => (
+                <button
+                  key={st}
+                  onClick={() => setFilterStatus(st)}
+                  className={`px-3 py-1.5 rounded-xl transition ${
+                    filterStatus === st
+                      ? 'bg-crimson text-white font-bold shadow-md shadow-crimson/20'
+                      : 'bg-cardElevated text-gray-400 hover:text-white border border-borderDark'
+                  }`}
+                >
+                  {st === 'ALL' ? 'All Orders' : STATUS_MAP[st]?.label || st}
+                  <span className="ml-1.5 text-[11px] opacity-75 font-mono">
+                    ({orders.filter(o => st === 'ALL' ? true : o.status === st).length})
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="w-full md:w-64">
+              <input
+                type="text"
+                placeholder="Search token #C-..., roll no..."
+                value={searchQuery}
+                onInput={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-cardElevated border border-borderDark rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-crimson"
+              />
+            </div>
+          </div>
+
+          {/* Orders Grid */}
+          {filteredOrders.length === 0 ? (
+            <div className="text-center py-20 text-gray-400 bg-charcoal rounded-2xl border border-dashed border-borderDark">
+              <span className="text-4xl block mb-2">🔍</span>
+              <p className="font-semibold text-gray-300">No orders found matching criteria</p>
+              <p className="text-xs text-gray-500 mt-1">Try switching status filters or clearing the search box.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredOrders.map(order => (
+                <div
+                  key={order.id}
+                  className={`bg-charcoal border ${
+                    order.status === 'PREPARING' ? 'border-orange-500/50' : 
+                    order.status === 'READY_FOR_PICKUP' ? 'border-emerald-500/50 shadow-emerald-500/10' :
+                    'border-borderDark'
+                  } rounded-2xl p-5 shadow-xl flex flex-col justify-between transition-all`}
+                >
+                  <div>
+                    {/* Token & Status Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-borderDark">
+                      <div>
+                        <span className="font-mono font-black text-2xl text-white tracking-wider">
+                          {order.token_number}
+                        </span>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          Order ID: #{order.id}
+                        </div>
+                      </div>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${STATUS_MAP[order.status]?.bg} ${STATUS_MAP[order.status]?.text} ${STATUS_MAP[order.status]?.border}`}>
+                        {STATUS_MAP[order.status]?.label}
+                      </span>
+                    </div>
+
+                    {/* Student Info */}
+                    <div className="py-3 text-xs flex justify-between items-center text-gray-300 border-b border-borderDark">
+                      <div>
+                        <div className="font-bold text-white text-sm">{order.user?.name || 'Walk-in Student'}</div>
+                        <div className="text-crimson-light font-mono text-[11px]">Roll: {order.user?.student_id || 'CS2026-042'}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-accentGold font-mono font-bold text-sm">₹{order.total_amount}</div>
+                        <div className="text-gray-400 text-[10px] uppercase font-semibold">{order.payment_method} ({order.payment_status})</div>
+                      </div>
+                    </div>
+
+                    {/* Special Instructions Note if any */}
+                    {order.special_notes && (
+                      <div className="my-2.5 p-2.5 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-xs text-yellow-300 flex items-start gap-2">
+                        <span>📝</span>
+                        <div>
+                          <strong className="block text-[10px] uppercase tracking-wider text-yellow-400">Cooking Instruction:</strong>
+                          <span>{order.special_notes}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Items List */}
+                    <div className="py-3 space-y-2">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Items Ordered:</div>
+                      {order.items?.map(item => (
+                        <div key={item.id} className="flex justify-between items-center text-xs bg-cardElevated/50 px-3 py-1.5 rounded-lg">
+                          <span className="font-semibold text-gray-200">
+                            <span className="text-crimson font-black mr-1">{item.quantity}×</span>
+                            {item.food_name}
+                          </span>
+                          <span className="text-gray-400 font-mono">₹{item.total_price}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Action Workflow Buttons */}
+                  <div className="pt-4 border-t border-borderDark space-y-2">
+                    {order.status === 'PENDING' || order.status === 'PAID' ? (
+                      <button
+                        onClick={() => onUpdateStatus(order.id, 'PREPARING')}
+                        className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold tracking-wide transition shadow-lg shadow-orange-600/20 flex items-center justify-center gap-2"
+                      >
+                        <span>🍳</span> START PREPARING DISH
+                      </button>
+                    ) : null}
+
+                    {order.status === 'PREPARING' ? (
+                      <button
+                        onClick={() => onUpdateStatus(order.id, 'READY_FOR_PICKUP')}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide transition shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
+                      >
+                        <span>🔔</span> READY FOR COUNTER PICKUP
+                      </button>
+                    ) : null}
+
+                    {order.status === 'READY_FOR_PICKUP' ? (
+                      <button
+                        onClick={() => onUpdateStatus(order.id, 'COMPLETED')}
+                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold tracking-wide transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                      >
+                        <span>✅</span> MARK COLLECTED BY STUDENT
+                      </button>
+                    ) : null}
+
+                    {order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            if (confirm(`Cancel token ${order.token_number}?`)) {
+                              onUpdateStatus(order.id, 'CANCELLED');
+                            }
+                          }}
+                          className="text-[11px] text-gray-400 hover:text-red-400 transition underline"
+                        >
+                          Cancel Order
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 3. MENU & INVENTORY MANAGEMENT TAB
+    // ==========================================
+    function MenuManagerTab({ menuItems, onToggleAvailability, onEditItem, onDeleteItem }) {
+      const [selectedCategory, setSelectedCategory] = useState('ALL');
+      const [search, setSearch] = useState('');
+
+      const categories = ['ALL', 'Breakfast', 'Lunch', 'Snacks', 'Beverages', 'Desserts'];
+
+      const filtered = menuItems.filter(item => {
+        const matchesCat = selectedCategory === 'ALL' || item.category.toLowerCase() === selectedCategory.toLowerCase();
+        const matchesSearch = !search || item.name.toLowerCase().includes(search.toLowerCase());
+        return matchesCat && matchesSearch;
+      });
+
+      return (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Filter Bar */}
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-charcoal p-4 rounded-2xl border border-borderDark">
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl transition ${
+                    selectedCategory === cat
+                      ? 'bg-crimson text-white font-bold'
+                      : 'bg-cardElevated text-gray-400 hover:text-white border border-borderDark'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div className="w-full md:w-64">
+              <input
+                type="text"
+                placeholder="Search dish name..."
+                value={search}
+                onInput={(e) => setSearch(e.target.value)}
+                className="w-full bg-cardElevated border border-borderDark rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-crimson"
+              />
+            </div>
+          </div>
+
+          {/* Menu Items Table */}
+          <div className="bg-charcoal border border-borderDark rounded-2xl overflow-hidden shadow-xl">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-borderDark bg-cardElevated/60 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                  <th className="py-3.5 px-4">Dish</th>
+                  <th className="py-3.5 px-4">Category</th>
+                  <th className="py-3.5 px-4">Type</th>
+                  <th className="py-3.5 px-4">Price</th>
+                  <th className="py-3.5 px-4">Prep Time</th>
+                  <th className="py-3.5 px-4 text-center">Live Stock Status</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-borderDark text-xs">
+                {filtered.map(item => (
+                  <tr key={item.id} className="hover:bg-cardElevated/40 transition">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="w-11 h-11 rounded-lg object-cover bg-borderDark shrink-0"
+                          onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100'; }}
+                        />
+                        <div>
+                          <div className="font-bold text-white text-sm">{item.name}</div>
+                          <div className="text-gray-400 text-[11px] line-clamp-1 max-w-xs">{item.description}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-gray-300">
+                      {item.category}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center gap-1.5 font-bold text-[11px] ${item.is_veg ? 'text-vegGreen' : 'text-nonVegRed'}`}>
+                        <span className={`w-2 h-2 rounded-full ${item.is_veg ? 'bg-vegGreen' : 'bg-nonVegRed'}`}></span>
+                        {item.is_veg ? 'Pure Veg' : 'Non-Veg'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-sm text-accentGold">
+                      ₹{item.price}
+                    </td>
+                    <td className="py-3 px-4 text-gray-400">
+                      ⏱️ {item.prep_time_minutes} mins
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => onToggleAvailability(item.id, item.name, item.is_available)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition flex items-center gap-1.5 mx-auto border ${
+                          item.is_available
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+                            : 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${item.is_available ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+                        {item.is_available ? 'IN STOCK' : 'OUT OF STOCK'}
+                      </button>
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => onEditItem(item)}
+                        className="px-2.5 py-1 bg-cardElevated hover:bg-borderDark text-gray-200 rounded text-xs font-semibold border border-borderDark transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onDeleteItem(item.id, item.name)}
+                        className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs font-semibold border border-red-500/20 transition"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 4. CUSTOMER CARE & SUPPORT DESK TAB
+    // ==========================================
+    function CustomerCareTab({ tickets, onOpenReplyModal, onQuickRefund }) {
+      const [filter, setFilter] = useState('ALL');
+
+      const filtered = tickets.filter(t => {
+        if (filter === 'ALL') return true;
+        return t.status === filter;
+      });
+
+      return (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-charcoal via-cardElevated to-charcoal p-6 rounded-2xl border border-borderDark flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h2 className="text-lg font-black text-white flex items-center gap-2">
+                <span>🎧</span> Student Dispute & Support Center
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">
+                Directly communicate with students regarding order delays, incorrect items, or meal card wallet refunds.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED'].map(st => (
+                <button
+                  key={st}
+                  onClick={() => setFilter(st)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                    filter === st
+                      ? 'bg-crimson text-white shadow-md shadow-crimson/20'
+                      : 'bg-cardElevated text-gray-400 hover:text-white border border-borderDark'
+                  }`}
+                >
+                  {st.replace(/_/g, ' ')}
+                  <span className="ml-1 opacity-75 font-mono">
+                    ({tickets.filter(t => st === 'ALL' ? true : t.status === st).length})
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tickets List */}
+          {filtered.length === 0 ? (
+            <div className="text-center py-20 text-gray-400 bg-charcoal rounded-2xl border border-dashed border-borderDark">
+              <span className="text-4xl block mb-2">✨</span>
+              <p className="font-semibold text-gray-300">No support tickets in this category</p>
+              <p className="text-xs text-gray-500 mt-1">Students can raise inquiries directly from the mobile app profile tab.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filtered.map(ticket => (
+                <div key={ticket.id} className="bg-charcoal border border-borderDark rounded-2xl p-5 shadow-xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-borderDark">
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        ticket.status === 'OPEN' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                        ticket.status === 'IN_PROGRESS' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                        'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      }`}>
+                        {ticket.status.replace(/_/g, ' ')}
+                      </span>
+                      <span className="bg-cardElevated text-gray-300 font-bold text-xs px-2.5 py-1 rounded-lg border border-borderDark">
+                        {ticket.category}
+                      </span>
+                      {ticket.token_number && (
+                        <span className="bg-crimson/20 text-crimson-light font-mono font-bold text-xs px-2 py-1 rounded border border-crimson/30">
+                          Token {ticket.token_number}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-gray-400">
+                      Ticket #{ticket.id} • {new Date(ticket.created_at).toLocaleString()}
+                    </div>
+                  </div>
+
+                  {/* Student & Message Info */}
+                  <div className="py-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-bold text-white text-sm">{ticket.user?.name || 'Student'}</span>
+                      <span className="text-xs text-crimson-light font-mono font-bold">({ticket.user?.student_id || 'CS2026'})</span>
+                      <span className="text-xs text-gray-400">• {ticket.user?.email}</span>
+                      <span className="ml-auto text-xs text-accentGold font-bold font-mono">
+                        Wallet Balance: ₹{ticket.user?.wallet_balance}
+                      </span>
+                    </div>
+
+                    <h3 className="text-sm font-bold text-gray-200 mt-1">{ticket.subject}</h3>
+                    <p className="text-xs text-gray-300 mt-1.5 bg-cardElevated/50 p-3 rounded-xl border border-borderDark">
+                      "{ticket.message}"
+                    </p>
+
+                    {/* Admin Reply Thread */}
+                    {ticket.admin_reply && (
+                      <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300">
+                        <strong className="block text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                          Staff Response:
+                        </strong>
+                        {ticket.admin_reply}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Toolbar */}
+                  <div className="pt-3 border-t border-borderDark flex flex-wrap gap-2 justify-end">
+                    <button
+                      onClick={() => onQuickRefund(ticket.user?.student_id)}
+                      className="px-3 py-1.5 bg-accentGold/10 hover:bg-accentGold/20 text-accentGold border border-accentGold/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                    >
+                      <span>⚡</span> Refund / Credit Wallet
+                    </button>
+
+                    <button
+                      onClick={() => onOpenReplyModal(ticket)}
+                      className="px-3.5 py-1.5 bg-crimson hover:bg-crimson-hover text-white rounded-xl text-xs font-bold transition shadow-md shadow-crimson/20"
+                    >
+                      {ticket.admin_reply ? 'Update Reply' : 'Reply & Resolve'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 5. STUDENTS & WALLETS TAB
+    // ==========================================
+    function StudentsTab({ students, onAdjustWallet }) {
+      const [search, setSearch] = useState('');
+
+      const filtered = students.filter(s => {
+        const q = search.toLowerCase();
+        return !q || s.name?.toLowerCase().includes(q) || s.student_id?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q);
+      });
+
+      return (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          <div className="flex justify-between items-center bg-charcoal p-4 rounded-2xl border border-borderDark">
+            <h2 className="text-sm font-bold text-white">Registered Students Directory ({students.length})</h2>
+            <div className="w-72">
+              <input
+                type="text"
+                placeholder="Search by student name or roll no..."
+                value={search}
+                onInput={(e) => setSearch(e.target.value)}
+                className="w-full bg-cardElevated border border-borderDark rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-crimson"
+              />
+            </div>
+          </div>
+
+          <div className="bg-charcoal border border-borderDark rounded-2xl overflow-hidden shadow-xl">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-borderDark bg-cardElevated/60 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                  <th className="py-3.5 px-4">Student Name</th>
+                  <th className="py-3.5 px-4">Roll Number</th>
+                  <th className="py-3.5 px-4">Email Address</th>
+                  <th className="py-3.5 px-4">Canteen Wallet Balance</th>
+                  <th className="py-3.5 px-4 text-right">Quick Desk Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-borderDark text-xs">
+                {filtered.map(student => (
+                  <tr key={student.id} className="hover:bg-cardElevated/40 transition">
+                    <td className="py-3 px-4 font-bold text-white">
+                      {student.name}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-crimson-light">
+                      {student.student_id}
+                    </td>
+                    <td className="py-3 px-4 text-gray-400">
+                      {student.email}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-black text-sm text-accentGold">
+                      ₹{student.wallet_balance.toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => onAdjustWallet(student.student_id)}
+                        className="px-3 py-1 bg-cardElevated hover:bg-accentGold/20 hover:text-accentGold text-gray-200 rounded-lg text-xs font-bold border border-borderDark transition"
+                      >
+                        Adjust / Top-Up
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // MODAL: ADD / EDIT MENU ITEM
+    // ==========================================
+    function MenuModal({ initialData, onClose, onSave }) {
+      const isEdit = Boolean(initialData);
+      const [formData, setFormData] = useState({
+        id: initialData?.id || undefined,
+        name: initialData?.name || '',
+        category: initialData?.category || 'Breakfast',
+        price: initialData?.price || 50,
+        is_veg: initialData?.is_veg ?? true,
+        is_available: initialData?.is_available ?? true,
+        description: initialData?.description || '',
+        prep_time_minutes: initialData?.prep_time_minutes || 8,
+        calories: initialData?.calories || 250,
+        image_url: initialData?.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop',
+      });
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-charcoal border border-borderDark w-full max-w-lg rounded-2xl shadow-2xl p-6 overflow-hidden">
+            <div className="flex justify-between items-center pb-4 border-b border-borderDark">
+              <h3 className="text-base font-bold text-white">
+                {isEdit ? '✏️ Edit Menu Item' : '➕ Add New Canteen Dish'}
+              </h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 mt-4 text-xs">
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Dish Name</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Butter Paneer Kulcha"
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                  >
+                    <option value="Breakfast">Breakfast</option>
+                    <option value="Lunch">Lunch</option>
+                    <option value="Snacks">Snacks</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Desserts">Desserts</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Price (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                    className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Diet Type</label>
+                  <div className="flex gap-4 mt-2">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-vegGreen font-bold">
+                      <input
+                        type="radio"
+                        checked={formData.is_veg === true}
+                        onChange={() => setFormData({ ...formData, is_veg: true })}
+                      />
+                      Veg
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-nonVegRed font-bold">
+                      <input
+                        type="radio"
+                        checked={formData.is_veg === false}
+                        onChange={() => setFormData({ ...formData, is_veg: false })}
+                      />
+                      Non-Veg
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Stock Status</label>
+                  <div className="flex gap-4 mt-2">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-emerald-400 font-bold">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_available}
+                        onChange={(e) => setFormData({ ...formData, is_available: e.target.checked })}
+                      />
+                      In Stock
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Prep Time (Mins)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.prep_time_minutes}
+                    onChange={(e) => setFormData({ ...formData, prep_time_minutes: parseInt(e.target.value) })}
+                    className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 font-semibold mb-1">Calories (kcal)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.calories}
+                    onChange={(e) => setFormData({ ...formData, calories: parseInt(e.target.value) })}
+                    className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Image URL</label>
+                <input
+                  type="url"
+                  value={formData.image_url}
+                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                  placeholder="https://images.unsplash.com/..."
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Description</label>
+                <textarea
+                  rows="2"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Crispy, fragrant, freshly prepared..."
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                ></textarea>
+              </div>
+
+              <div className="pt-4 border-t border-borderDark flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-cardElevated hover:bg-borderDark text-gray-300 rounded-xl font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-crimson hover:bg-crimson-hover text-white rounded-xl font-bold shadow-lg shadow-crimson/30"
+                >
+                  {isEdit ? 'Save Changes' : 'Add Item'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // MODAL: WALLET ADJUSTMENT & REFUND
+    // ==========================================
+    function WalletModal({ initialStudent, onClose, onConfirm }) {
+      const [studentId, setStudentId] = useState(initialStudent || 'CS2026-042');
+      const [amount, setAmount] = useState('50');
+      const [reason, setReason] = useState('Order refund / Counter cash top-up');
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onConfirm(studentId, amount, reason);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-charcoal border border-borderDark w-full max-w-md rounded-2xl shadow-2xl p-6">
+            <div className="flex justify-between items-center pb-4 border-b border-borderDark">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>💳</span> Top-Up or Refund Student Wallet
+              </h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 mt-4 text-xs">
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Student Roll No or Email</label>
+                <input
+                  type="text"
+                  required
+                  value={studentId}
+                  onChange={(e) => setStudentId(e.target.value)}
+                  placeholder="CS2026-042 or student@college.edu"
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white font-mono focus:outline-none focus:border-crimson"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Amount in Rupees (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="e.g. 100 or -50 for debit"
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-accentGold font-bold text-base focus:outline-none focus:border-crimson"
+                />
+                <span className="text-[10px] text-gray-500 mt-1 block">Positive numbers credit/top-up balance, negative numbers deduct.</span>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Reason / Note</label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Refund for delayed order #C-..., cash reload, etc."
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-borderDark flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-cardElevated hover:bg-borderDark text-gray-300 rounded-xl font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-accentGold text-black rounded-xl font-bold shadow-lg shadow-accentGold/20"
+                >
+                  Confirm Adjustment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // MODAL: SUPPORT TICKET REPLY
+    // ==========================================
+    function TicketReplyModal({ ticket, onClose, onSubmit, onQuickRefund }) {
+      const [replyText, setReplyText] = useState(ticket.admin_reply || '');
+      const [status, setStatus] = useState(ticket.status || 'RESOLVED');
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit(ticket.id, replyText, status);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-charcoal border border-borderDark w-full max-w-lg rounded-2xl shadow-2xl p-6">
+            <div className="flex justify-between items-center pb-4 border-b border-borderDark">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>💬</span> Reply to Student Ticket #{ticket.id}
+              </h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            <div className="mt-3 p-3 bg-cardElevated rounded-xl border border-borderDark text-xs">
+              <div className="flex justify-between items-center text-gray-400 mb-1">
+                <span className="font-bold text-white">{ticket.user?.name} ({ticket.user?.student_id})</span>
+                <span className="text-crimson-light font-bold">{ticket.category}</span>
+              </div>
+              <p className="text-gray-300 font-medium">"{ticket.message}"</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 mt-4 text-xs">
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Response Message to Student</label>
+                <textarea
+                  rows="3"
+                  required
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Explain the resolution or inform the student..."
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">Update Ticket Status</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="w-full bg-cardElevated border border-borderDark rounded-xl p-2.5 text-white focus:outline-none focus:border-crimson"
+                >
+                  <option value="OPEN">OPEN (Still reviewing)</option>
+                  <option value="IN_PROGRESS">IN PROGRESS (Kitchen addressing)</option>
+                  <option value="RESOLVED">RESOLVED (Issue completed)</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-borderDark flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onQuickRefund();
+                  }}
+                  className="px-3 py-2 bg-accentGold/10 text-accentGold border border-accentGold/30 rounded-xl font-bold hover:bg-accentGold/20"
+                >
+                  ⚡ Issue Wallet Refund
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 bg-cardElevated hover:bg-borderDark text-gray-300 rounded-xl font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-crimson hover:bg-crimson-hover text-white rounded-xl font-bold shadow-lg shadow-crimson/30"
+                  >
+                    Send Response
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Render React Root
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
